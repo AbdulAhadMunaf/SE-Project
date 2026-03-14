@@ -3,8 +3,12 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 import userRoutes from './routes/userRoutes.js';
+import carRoutes from './routes/carRoutes.js';
 
 import pool from './config/db.js';
+
+import createUserTable from './data/createUserTable.js';
+import createCarsTable from './data/createCarsTable.js';
 
 dotenv.config();
 
@@ -15,6 +19,7 @@ app.use(express.json());
 app.use(cors());
 
 app.use('/user', userRoutes);
+app.use('/car', carRoutes);
 
 // Root test route
 app.get('/', async (req, res) => {
@@ -32,6 +37,7 @@ const start = async () => {
 
     // Create tables in dependency order
     await createUserTable();
+    await createCarsTable();
 
     console.log(' All tables created successfully');
 
