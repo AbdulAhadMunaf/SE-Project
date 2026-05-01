@@ -23,6 +23,10 @@ export const createRentalService = async ({
       throw new Error("Car not found");
     }
 
+    if (carRes.rows[0].carstatus === 'maintenance') {
+      throw new Error("Car is currently in maintenance and cannot be booked");
+    }
+
     const overlapRes = await client.query(
       `SELECT 1 FROM rentals 
        WHERE carId = $1 
@@ -140,7 +144,11 @@ export const approveRentalService = async ({ bookingId, userId }) => {
     }
     const { carid, status } = rentalRes.rows[0];
     // 2) Lock car first
-    await client.query(`SELECT carId FROM cars WHERE carId = $1 FOR UPDATE`, [carid]);
+    const carLock = await client.query(`SELECT carStatus FROM cars WHERE carId = $1 FOR UPDATE`, [carid]);
+    if (carLock.rows[0].carstatus === 'maintenance') {
+      throw new Error("Cannot approve rental: Car is currently in maintenance");
+    }
+
     const activeCheck = await client.query(
       `SELECT 1 FROM rentals WHERE carId = $1 AND status = 'active' LIMIT 1`,
       [carid]
@@ -254,10 +262,22 @@ export const endRentalService = async (bookingId) => {
       throw new Error("Rental is not currently active");
     }
 
-    await client.query(
-      `UPDATE cars SET carstatus = 'available' WHERE carid = $1`,
+    const checkRequestsEnd = await client.query(
+      `SELECT 1 FROM rentals WHERE carid = $1 AND status = 'requested' LIMIT 1`,
       [carid]
     );
+
+    if (checkRequestsEnd.rows.length === 0) {
+      await client.query(
+        `UPDATE cars SET carstatus = 'available' WHERE carid = $1`,
+        [carid]
+      );
+    } else {
+      await client.query(
+        `UPDATE cars SET carstatus = 'requested' WHERE carid = $1`,
+        [carid]
+      );
+    }
 
     // 5) Mark rental as completed
     await client.query(
@@ -296,10 +316,17 @@ export const declineRentalService = async (bookingId) => {
       throw new Error("Rental is not in requested status");
     }
 
-    await client.query(
-      `UPDATE cars SET carStatus = 'available' WHERE carId = $1`,
-      [carid]
+    const checkRequestsDecline = await client.query(
+      `SELECT 1 FROM rentals WHERE carId = $1 AND status = 'requested' AND bookingId != $2 LIMIT 1`,
+      [carid, bookingId]
     );
+
+    if (checkRequestsDecline.rows.length === 0) {
+      await client.query(
+        `UPDATE cars SET carStatus = 'available' WHERE carId = $1`,
+        [carid]
+      );
+    }
 
     // 5) Delete the associated payment (reverse payment)
     await client.query(`DELETE FROM payments WHERE paymentId = $1`, [paymentid]);

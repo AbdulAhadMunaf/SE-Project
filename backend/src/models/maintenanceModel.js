@@ -32,6 +32,17 @@ export const createMaintenanceWithCarLink = async (carId, { maintenanceDate, mai
   try {
     await client.query('BEGIN');
 
+    const carLock = await client.query(
+      `SELECT carstatus FROM cars WHERE carid = $1 FOR UPDATE`,
+      [carId]
+    );
+    if (carLock.rows.length === 0) {
+      throw new Error("Car not found");
+    }
+    if (carLock.rows[0].carstatus !== 'available') {
+      throw new Error("Car must be 'available' to be put into maintenance");
+    }
+
     const insertResult = await client.query(
       `INSERT INTO maintenance (maintenancedate, maintenancetype, maintenancecost)
        VALUES ($1, $2, $3)
